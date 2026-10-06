@@ -23,25 +23,29 @@ urlencode() {
   printf '%s' "$out"
 }
 
-if [[ ! -f .env ]]; then
-  echo "== Configuração inicial (gera o .env) =="
-  read -rp "IP da câmera [192.168.15.12]: " ip
-  read -rsp "Senha da câmera (a do dispositivo no app Yoosee): " cam_pass; echo
-  read -rp "Pasta das gravações [/srv/cams/gravacoes]: " rec
-  read -rp "Usuário do painel [pedro]: " user
-  read -rsp "Senha do painel: " pass; echo
-  [[ -n "$cam_pass" && -n "$pass" ]] || erro "Senhas não podem ficar vazias."
-  umask 077
-  cat > .env <<EOF
-CAMERA_SALA_IP=${ip:-192.168.15.12}
-CAMERA_SENHA=$(urlencode "$cam_pass")
-GRAVACOES=${rec:-/srv/cams/gravacoes}
-PAINEL_USUARIO=${user:-pedro}
-PAINEL_SENHA=${pass}
-EOF
-  umask 022
-  echo ".env criado."
-fi
+touch .env && chmod 600 .env
+
+# pergunta só o que falta no .env (serve pra .env novo ou incompleto)
+garante() {
+  local var="$1" pergunta="$2" padrao="$3" secreto="${4:-}" valor
+  grep -qE "^${var}=.+" .env && return
+  if [[ -n "$secreto" ]]; then
+    read -rsp "$pergunta: " valor; echo
+  else
+    read -rp "$pergunta [${padrao}]: " valor
+    valor="${valor:-$padrao}"
+  fi
+  [[ -n "$valor" ]] || erro "$var não pode ficar vazio."
+  [[ "$var" == CAMERA_SENHA ]] && valor=$(urlencode "$valor")
+  sed -i "/^${var}=/d" .env
+  echo "${var}=${valor}" >> .env
+}
+
+garante CAMERA_SALA_IP "IP da câmera" 192.168.15.12
+garante CAMERA_SENHA "Senha da câmera (a do dispositivo no app Yoosee)" "" secreto
+garante GRAVACOES "Pasta das gravações" /srv/cams/gravacoes
+garante PAINEL_USUARIO "Usuário do painel" pedro
+garante PAINEL_SENHA "Senha do painel" "" secreto
 
 set -a; source .env; set +a
 
