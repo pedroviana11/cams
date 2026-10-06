@@ -1,0 +1,85 @@
+mqtt:
+  enabled: false
+
+# UI do Frigate em http://<servidor>:8091 (com login). A porta interna sem login fica só no localhost.
+networking:
+  listen:
+    internal: 127.0.0.1:5000
+    external: 8091
+
+# rede de casa: HTTP simples evita o aviso de certificado (e o erro 400 de abrir http numa porta https)
+tls:
+  enabled: false
+
+# go2rtc conecta na câmera uma vez só (UDP) e redistribui o stream localmente
+go2rtc:
+  # API do go2rtc mostra a URL da câmera com senha: só localhost (o Frigate faz proxy dela com login)
+  api:
+    listen: 127.0.0.1:1984
+  rtsp:
+    # restream sem senha: não expor na rede, só o Frigate consome
+    listen: 127.0.0.1:8554
+  streams:
+    sala:
+      # áudio G.711 convertido para AAC, que cabe no MP4 das gravações
+      - ffmpeg:rtsp://admin:{FRIGATE_RTSP_PASSWORD}@{FRIGATE_SALA_IP}:554/onvif1#input=rtsp/udp#video=copy#audio=aac
+    sala_sub:
+      - ffmpeg:rtsp://admin:{FRIGATE_RTSP_PASSWORD}@{FRIGATE_SALA_IP}:554/onvif2#input=rtsp/udp#video=copy
+
+# OpenVINO na CPU: funciona em qualquer x86. Com iGPU Intel, troque device para GPU (ver README)
+detectors:
+  ov:
+    type: openvino
+    device: CPU
+
+model:
+  width: 300
+  height: 300
+  input_tensor: nhwc
+  input_pixel_format: bgr
+  path: /openvino-model/ssdlite_mobilenet_v2.xml
+  labelmap_path: /openvino-model/coco_91cl_bkgr.txt
+
+record:
+  enabled: true
+  # gravação 24/7: guarda 5 dias e apaga o mais antigo automaticamente
+  continuous:
+    days: 5
+  motion:
+    days: 5
+  alerts:
+    retain:
+      days: 5
+  detections:
+    retain:
+      days: 5
+
+snapshots:
+  enabled: true
+  retain:
+    default: 5
+
+cameras:
+  sala:
+    ffmpeg:
+      output_args:
+        record: preset-record-generic-audio-copy
+      inputs:
+        - path: rtsp://127.0.0.1:8554/sala
+          input_args: preset-rtsp-restream
+          roles: [record]
+        - path: rtsp://127.0.0.1:8554/sala_sub
+          input_args: preset-rtsp-restream
+          roles: [detect]
+    detect:
+      enabled: true
+      width: 640
+      height: 360
+      fps: 5
+    objects:
+      track: [person, cat, dog, car]
+    live:
+      streams:
+        Principal: sala
+        Sub: sala_sub
+version: 0.18-0

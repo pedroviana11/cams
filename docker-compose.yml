@@ -1,0 +1,56 @@
+# Painel em http://<servidor>:8090, UI do Frigate em http://<servidor>:8091
+# Configuração da máquina fica no .env (copie de .env.example ou rode ./instalar.sh)
+services:
+  frigate:
+    container_name: frigate
+    image: ghcr.io/blakeblackshear/frigate:stable
+    restart: unless-stopped
+    # host: a câmera só fala RTSP via UDP, e UDP atrás do NAT do Docker costuma perder os pacotes RTP
+    network_mode: host
+    shm_size: "128mb"
+    environment:
+      FRIGATE_RTSP_PASSWORD: ${CAMERA_SENHA}
+      FRIGATE_SALA_IP: ${CAMERA_SALA_IP}
+    # iGPU Intel (N100, i3/i5 com vídeo integrado): descomente e use device: GPU no config.yml
+    # devices:
+    #   - /dev/dri/renderD128:/dev/dri/renderD128
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./config:/config
+      # create_host_path false: se o disco não montar, o container falha em vez de lotar o disco do sistema
+      - type: bind
+        source: ${GRAVACOES}
+        target: /media/frigate
+        bind:
+          create_host_path: false
+      - type: tmpfs # cache de segmentos em RAM, poupa o disco
+        target: /tmp/cache
+        tmpfs:
+          size: 1000000000
+
+  # one-shot: garante o usuário do painel (PAINEL_USUARIO/PAINEL_SENHA) no banco do Frigate
+  usuario:
+    container_name: frigate-usuario
+    image: ghcr.io/blakeblackshear/frigate:stable
+    restart: "no"
+    entrypoint: ["python3", "/scripts/usuario.py"]
+    environment:
+      PAINEL_USUARIO: ${PAINEL_USUARIO}
+      PAINEL_SENHA: ${PAINEL_SENHA}
+    volumes:
+      - ./config:/config
+      - ./scripts:/scripts:ro
+    depends_on:
+      frigate:
+        condition: service_healthy
+
+  painel:
+    container_name: painel
+    build: ./painel
+    restart: unless-stopped
+    network_mode: host # fala com o Frigate em 127.0.0.1
+    environment:
+      PAINEL_PORTA: "8090"
+      FRIGATE_PORTA: "8091"
+    depends_on:
+      - frigate

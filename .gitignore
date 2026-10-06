@@ -1,0 +1,13 @@
+# segredos e dados da máquina
+.env
+config/frigate.db*
+config/backup.db
+config/backup_config.yaml
+config/go2rtc_homekit.yml
+config/model_cache/
+config/*.bak
+config/.*
+
+# painel
+painel/node_modules/
+painel/dist/
